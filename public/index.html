@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Chat App</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Authentication Modal -->
+    <div id="auth-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <div class="auth-tabs">
+                <button class="tab-btn active" data-tab="login">Login</button>
+                <button class="tab-btn" data-tab="register">Register</button>
+            </div>
+            
+            <!-- Login Form -->
+            <form id="login-form" class="auth-form active">
+                <h2>Login</h2>
+                <div class="form-group">
+                    <label for="login-email">Email:</label>
+                    <input type="email" id="login-email" required>
+                </div>
+                <div class="form-group">
+                    <label for="login-password">Password:</label>
+                    <input type="password" id="login-password" required>
+                </div>
+                <button type="submit" class="auth-btn">Login</button>
+                <div id="login-error" class="error-message"></div>
+            </form>
+            
+            <!-- Register Form -->
+            <form id="register-form" class="auth-form">
+                <h2>Register</h2>
+                <div class="form-group">
+                    <label for="register-email">Email:</label>
+                    <input type="email" id="register-email" required>
+                </div>
+                <div class="form-group">
+                    <label for="register-password">Password:</label>
+                    <input type="password" id="register-password" required minlength="6">
+                    <small>Password must be at least 6 characters long</small>
+                </div>
+                <div class="form-group">
+                    <label for="confirm-password">Confirm Password:</label>
+                    <input type="password" id="confirm-password" required>
+                </div>
+                <button type="submit" class="auth-btn">Register</button>
+                <div id="register-error" class="error-message"></div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div class="app" id="main-app" style="display: none;">
+        <button class="toggle-sidebar">☰</button>
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>Chat History</h2>
+                <button id="new-chat-btn">
+                    <span>+</span>
+                    <span>New Chat</span>
+                </button>
+                <button id="logout-btn" class="logout-btn">Logout</button>
+            </div>
+            <div id="chat-list"></div>
+        </aside>
+        <main class="main-content">
+            <header>
+                <h1>AI Chat App</h1>
+                <p>Chat with multiple AI models with automatic failover</p>
+                <div class="user-info">
+                    <span id="user-email"></span>
+                </div>
+            </header>
+            <div class="model-selector">
+                <label for="model-select">AI Model:</label>
+                <select id="model-select">
+                    <option value="">Auto (Failover)</option>
+                    <option value="Groq">Groq (Llama 3.1)</option>
+                    <option value="Mistral">Mistral</option>
+                    <option value="OpenAI">OpenAI (GPT-3.5)</option>
+                </select>
+                <div>
+                    <button id="clear-history-btn">Clear History</button>
+                    <button class="theme-toggle" id="theme-toggle">☀️</button>
+                </div>
+            </div>
+            <div id="chat-box">
+                <div class="empty-chat-placeholder">
+                    <h2>Welcome to AI Chat App</h2>
+                    <p>Start a conversation by typing a message below. Your chat history will appear here.</p>
+                </div>
+            </div>
+            <button class="scroll-to-bottom">↓</button>
+            <div class="input-area">
+                <div class="input-container">
+                    <textarea id="message-input" placeholder="Message AI..." maxlength="2000"></textarea>
+                    <button id="send-btn" disabled>➤</button>
+                </div>
+            </div>
+        </main>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
