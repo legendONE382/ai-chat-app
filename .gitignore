@@ -202,3 +202,9 @@ typings/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+#tempoary files
+*.tmp
+GITHUB_PUSH_GUIDE.md
+#untracked files
+coding.code-workapace

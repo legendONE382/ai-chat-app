@@ -1,0 +1,21 @@
+{
+	"folders": [
+		{
+			"name": "coding",
+			"path": ".."
+		},
+		{
+			"name": "My Web Sites",
+			"path": "../../My Web Sites"
+		},
+		{
+			"name": "EstechSolutions",
+			"path": "../../../../Downloads/EstechSolutions"
+		}
+	],
+	"settings": {
+		"liveServer.settings.multiRootWorkspaceName": "coding",
+		"liveServer.settings.port": 5501,
+		"powershell.cwd": "coding"
+	}
+}
