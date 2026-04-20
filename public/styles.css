@@ -455,12 +455,20 @@ body {
     font-weight: 600;
 }
 
-.message .model-info {
+.model-info {
     font-size: 12px;
     opacity: 0.7;
     margin-top: 10px;
     font-style: italic;
     color: var(--text-model-info);
+}
+
+footer {
+    text-align: center;
+    padding: 10px;
+    color: var(--text-primary);
+    background: var(--main-header-bg);
+    border-top: 1px solid var(--main-header-border);
 }
 
 .typing-indicator {
