@@ -359,7 +359,6 @@ async function sendMessage() {
 
     const preferredModel = modelSelect.value;
     addMessage(message, 'user');
-    saveMessage(message, 'user');
     messageInput.value = '';
     sendBtn.disabled = true;
     autoResizeTextarea();
@@ -382,11 +381,10 @@ async function sendMessage() {
         
         if (data.error) {
             addMessage('Error: ' + data.error, 'ai');
-            saveMessage('Error: ' + data.error, 'ai');
         } else {
             const switchMsg = data.switched ? ` (Switched from ${data.triedModels.slice(0, -1).join(', ')})` : '';
             addMessage(data.reply, 'ai', data.model + switchMsg);
-            saveMessage(data.reply, 'ai', data.model + switchMsg);
+            loadChatHistory();
         }
     } catch (err) {
         // Remove typing indicator
@@ -395,13 +393,14 @@ async function sendMessage() {
         }
         
         addMessage('Network error: ' + err.message, 'ai');
-        saveMessage('Network error: ' + err.message, 'ai');
     } finally {
         sendBtn.disabled = false;
     }
 }
 
 function addMessage(text, sender, model = null) {
+    const normalizedSender = sender === 'assistant' ? 'ai' : sender;
+
     // Remove empty chat placeholder if it exists
     const placeholder = document.querySelector('.empty-chat-placeholder');
     if (placeholder) {
@@ -409,11 +408,11 @@ function addMessage(text, sender, model = null) {
     }
     
     const messageContainer = document.createElement('div');
-    messageContainer.className = `message-container ${sender}`;
+    messageContainer.className = `message-container ${normalizedSender}`;
     
     const avatar = document.createElement('div');
-    avatar.className = `message-avatar ${sender}`;
-    avatar.textContent = sender === 'user' ? 'U' : 'AI';
+    avatar.className = `message-avatar ${normalizedSender}`;
+    avatar.textContent = normalizedSender === 'user' ? 'U' : 'AI';
     
     const content = document.createElement('div');
     content.className = 'message-content';
@@ -422,7 +421,7 @@ function addMessage(text, sender, model = null) {
     messageContainer.appendChild(avatar);
     messageContainer.appendChild(content);
     
-    if (sender === 'ai' && model) {
+    if (normalizedSender === 'ai' && model) {
         const modelInfo = document.createElement('div');
         modelInfo.className = 'model-info';
         modelInfo.textContent = `Powered by ${model}`;
@@ -520,25 +519,6 @@ function formatMessage(text) {
     return formatted;
 }
 
-async function saveMessage(text, sender, model = null) {
-    try {
-        const response = await fetchWithAuth('/api/chat/conversations', {
-            method: 'POST',
-            body: JSON.stringify({
-                chatId: currentChatId,
-                message: { role: sender, content: text },
-                model: model
-            })
-        });
-        
-        if (!response.ok) {
-            console.error('Failed to save message to database');
-        }
-    } catch (error) {
-        console.error('Error saving message:', error);
-    }
-}
-
 async function loadChatHistory() {
     try {
         const response = await fetchWithAuth('/api/chat/conversations');
@@ -566,10 +546,7 @@ function createNewChat() {
         </div>
     `;
     
-    // Save new chat to database
-    saveMessage('', 'system', 'New chat created');
-    
-    updateChatList();
+    updateChatListSelection();
     messageInput.focus();
 }
 
@@ -582,7 +559,7 @@ function loadChat(chatId) {
         .then(conversation => {
             chatBox.innerHTML = '';
             conversation.messages.forEach(msg => addMessage(msg.content, msg.role));
-            updateChatList();
+            updateChatListSelection();
             messageInput.focus();
         })
         .catch(error => {
@@ -594,6 +571,7 @@ function loadChat(chatId) {
 function addChatToList(chatId, chatData) {
     const chatItem = document.createElement('div');
     chatItem.className = 'chat-item';
+    chatItem.dataset.chatId = chatId;
     if (chatId === currentChatId) chatItem.classList.add('active');
     chatItem.onclick = () => loadChat(chatId);
 
@@ -611,9 +589,16 @@ function addChatToList(chatId, chatData) {
     chatList.appendChild(chatItem);
 }
 
-function updateChatList() {
-    // This will be updated when we load from database
-    // For now, keep the existing functionality
+function updateChatListSelection() {
+    document.querySelectorAll('.chat-item').forEach(item => {
+        item.classList.remove('active');
+    });
+
+    const activeItem = document.querySelector(`.chat-item[data-chat-id="${currentChatId}"]`);
+
+    if (activeItem) {
+        activeItem.classList.add('active');
+    }
 }
 
 function clearHistory() {

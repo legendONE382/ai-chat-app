@@ -183,7 +183,10 @@ router.post('/generate-title', auth, async (req, res) => {
       return res.status(400).json({ error: 'Messages are required' });
     }
     
-    const conversationText = messages.slice(0, 5).map(msg => `${msg.sender}: ${msg.text}`).join('\n');
+    const conversationText = messages
+      .slice(0, 5)
+      .map(msg => `${msg.role || msg.sender}: ${msg.content || msg.text}`)
+      .join('\n');
     const prompt = `Based on this conversation, generate a short, descriptive title (max 6 words):\n\n${conversationText}`;
     
     // Use Groq for title generation if available
@@ -206,10 +209,25 @@ router.post('/generate-title', auth, async (req, res) => {
     }
     
     // Fallback to simple title
-    const firstMessage = messages[0].text.slice(0, 30) + (messages[0].text.length > 30 ? '...' : '');
+    const firstMessageText = messages[0].content || messages[0].text || 'New Chat';
+    const firstMessage = firstMessageText.slice(0, 30) + (firstMessageText.length > 30 ? '...' : '');
     res.json({ title: firstMessage });
   } catch (error) {
     console.error('Generate title error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete all user's conversations
+router.delete('/conversations', auth, async (req, res) => {
+  try {
+    const result = await Conversation.deleteMany({ userId: req.user.userId });
+    res.json({
+      success: true,
+      message: `Deleted ${result.deletedCount} conversations`
+    });
+  } catch (error) {
+    console.error('Delete conversations error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
