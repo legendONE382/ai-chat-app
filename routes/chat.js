@@ -1,216 +1,195 @@
 const express = require('express');
 const axios = require('axios');
-const Conversation = require('../models/Conversation');
 const auth = require('../middleware/auth');
+const supabase = require('../config/supabase');
 
 const router = express.Router();
 
-// AI Models configuration (same as in server.js but moved here for modularity)
 const models = [
   {
     name: 'Groq',
     apiKey: process.env.GROQ_API_KEY,
     url: 'https://api.groq.com/openai/v1/chat/completions',
-    headers: (key) => ({ 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' }),
-    body: (message) => ({
-      model: 'llama-3.1-8b-instant',
-      messages: [{ role: 'user', content: message }],
-      max_tokens: 6000
-    }),
+    headers: (key) => ({ Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }),
+    body: () => ({ model: 'llama-3.1-8b-instant', max_tokens: 6000 }),
     extractResponse: (data) => data.choices[0].message.content
   },
   {
     name: 'Mistral',
     apiKey: process.env.MISTRAL_API_KEY,
     url: 'https://api.mistral.ai/v1/chat/completions',
-    headers: (key) => ({ 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' }),
-    body: (message) => ({
-      model: 'mistral-small',
-      messages: [{ role: 'user', content: message }],
-      max_tokens: 4000
-    }),
+    headers: (key) => ({ Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }),
+    body: () => ({ model: 'mistral-small', max_tokens: 4000 }),
     extractResponse: (data) => data.choices[0].message.content
   },
   {
     name: 'OpenAI',
     apiKey: process.env.OPENAI_API_KEY,
     url: 'https://api.openai.com/v1/chat/completions',
-    headers: (key) => ({ 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' }),
-    body: (message) => ({
-      model: 'gpt-3.5-turbo',
-      messages: [{ role: 'user', content: message }],
-      max_tokens: 4000
-    }),
+    headers: (key) => ({ Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }),
+    body: () => ({ model: 'gpt-3.5-turbo', max_tokens: 4000 }),
     extractResponse: (data) => data.choices[0].message.content
   }
 ];
 
-// Chat endpoint with authentication and persistent storage
+async function getConversation(userId, chatId) {
+  const { data, error } = await supabase
+    .from('conversations')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('chat_id', chatId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data;
+}
+
+async function upsertConversation(conversation) {
+  const payload = {
+    user_id: conversation.user_id,
+    chat_id: conversation.chat_id,
+    title: conversation.title || 'New Chat',
+    messages: conversation.messages || [],
+    updated_at: new Date().toISOString()
+  };
+
+  if (!conversation.created_at) {
+    payload.created_at = new Date().toISOString();
+  }
+
+  const { data, error } = await supabase
+    .from('conversations')
+    .upsert(payload, { onConflict: 'user_id,chat_id' })
+    .select('*')
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
 router.post('/chat', auth, async (req, res) => {
   try {
     const { message, preferredModel, chatId } = req.body;
     const userId = req.user.userId;
-    
+
     if (!message) return res.status(400).json({ error: 'Message is required' });
     if (!chatId) return res.status(400).json({ error: 'Chat ID is required' });
-    
-    // Find or create conversation
-    let conversation = await Conversation.findOne({ userId, chatId });
+
+    let conversation = await getConversation(userId, chatId);
     if (!conversation) {
-      conversation = new Conversation({
-        userId,
-        chatId,
-        messages: []
-      });
+      conversation = { user_id: userId, chat_id: chatId, messages: [], title: 'New Chat' };
     }
-    
-    // Add user message to conversation
-    conversation.messages.push({ role: 'user', content: message });
-    await conversation.save();
-    
-    // Prepare messages for AI (include conversation history, limit to last 10 messages)
+
+    conversation.messages.push({ role: 'user', content: message, timestamp: new Date().toISOString() });
+    conversation = await upsertConversation(conversation);
     const conversationHistory = conversation.messages.slice(-10);
-    
-    let triedModels = [];
-    
-    // If preferred model is specified, try it first
+    const triedModels = [];
+
+    const tryModel = async (model) => {
+      const response = await axios.post(
+        model.url,
+        {
+          ...model.body(),
+          messages: conversationHistory
+        },
+        { headers: model.headers(model.apiKey), timeout: 10000 }
+      );
+      return model.extractResponse(response.data);
+    };
+
     if (preferredModel) {
-      const model = models.find(m => m.name === preferredModel);
-      if (model && model.apiKey) {
-        triedModels.push(model.name);
+      const preferred = models.find((m) => m.name === preferredModel);
+      if (preferred && preferred.apiKey) {
+        triedModels.push(preferred.name);
         try {
-          const response = await axios.post(model.url, {
-            ...model.body(message),
-            messages: conversationHistory
-          }, {
-            headers: model.headers(model.apiKey),
-            timeout: 10000
-          });
-          const reply = model.extractResponse(response.data);
-          
-          // Add AI reply to conversation
-          conversation.messages.push({ role: 'assistant', content: reply });
-          await conversation.save();
-          
-          return res.json({ 
-            reply, 
-            model: model.name, 
-            switched: false,
-            conversationId: chatId
-          });
+          const reply = await tryModel(preferred);
+          conversation.messages.push({ role: 'assistant', content: reply, timestamp: new Date().toISOString() });
+          await upsertConversation(conversation);
+          return res.json({ reply, model: preferred.name, switched: false, conversationId: chatId });
         } catch (error) {
-          console.error(`Error with preferred ${model.name}:`, error.message);
+          console.error(`Error with preferred ${preferred.name}:`, error.message);
         }
       }
     }
-    
-    // Switch to other available models
+
     for (const model of models) {
       if (!model.apiKey || triedModels.includes(model.name)) continue;
-      
       triedModels.push(model.name);
       try {
-        const response = await axios.post(model.url, {
-          ...model.body(message),
-          messages: conversationHistory
-        }, {
-          headers: model.headers(model.apiKey),
-          timeout: 10000
-        });
-        const reply = model.extractResponse(response.data);
-        
-        // Add AI reply to conversation
-        conversation.messages.push({ role: 'assistant', content: reply });
-        await conversation.save();
-        
-        return res.json({ 
-          reply, 
-          model: model.name, 
-          switched: true, 
-          triedModels,
-          conversationId: chatId
-        });
+        const reply = await tryModel(model);
+        conversation.messages.push({ role: 'assistant', content: reply, timestamp: new Date().toISOString() });
+        await upsertConversation(conversation);
+        return res.json({ reply, model: model.name, switched: true, triedModels, conversationId: chatId });
       } catch (error) {
         console.error(`Error with ${model.name}:`, error.message);
       }
     }
-    
-    res.status(500).json({ error: 'All AI models failed', triedModels });
+
+    return res.status(500).json({ error: 'All AI models failed', triedModels });
   } catch (error) {
     console.error('Chat error:', error);
-    res.status(500).json({ error: 'Server error during chat' });
+    return res.status(500).json({ error: 'Server error during chat' });
   }
 });
 
-// Get user's conversations
 router.get('/conversations', auth, async (req, res) => {
   try {
-    const conversations = await Conversation.find({ userId: req.user.userId })
-      .sort({ updatedAt: -1 })
-      .select('chatId title createdAt updatedAt messages');
-    
-    res.json(conversations);
+    const { data, error } = await supabase
+      .from('conversations')
+      .select('chat_id,title,created_at,updated_at,messages')
+      .eq('user_id', req.user.userId)
+      .order('updated_at', { ascending: false });
+
+    if (error) throw error;
+
+    const normalized = (data || []).map((row) => ({
+      chatId: row.chat_id,
+      title: row.title,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      messages: row.messages || []
+    }));
+
+    return res.json(normalized);
   } catch (error) {
     console.error('Get conversations error:', error);
-    res.status(500).json({ error: 'Server error' });
+    return res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Get specific conversation
 router.get('/conversations/:chatId', auth, async (req, res) => {
   try {
-    const conversation = await Conversation.findOne({ 
-      userId: req.user.userId, 
-      chatId: req.params.chatId 
-    });
-    
+    const conversation = await getConversation(req.user.userId, req.params.chatId);
     if (!conversation) {
       return res.status(404).json({ error: 'Conversation not found' });
     }
-    
-    res.json(conversation);
+
+    return res.json({
+      chatId: conversation.chat_id,
+      title: conversation.title,
+      createdAt: conversation.created_at,
+      updatedAt: conversation.updated_at,
+      messages: conversation.messages || []
+    });
   } catch (error) {
     console.error('Get conversation error:', error);
-    res.status(500).json({ error: 'Server error' });
+    return res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Generate chat title endpoint
-router.post('/generate-title', auth, async (req, res) => {
+router.delete('/conversations', auth, async (req, res) => {
   try {
-    const { messages } = req.body;
-    if (!messages || messages.length === 0) {
-      return res.status(400).json({ error: 'Messages are required' });
-    }
-    
-    const conversationText = messages.slice(0, 5).map(msg => `${msg.sender}: ${msg.text}`).join('\n');
-    const prompt = `Based on this conversation, generate a short, descriptive title (max 6 words):\n\n${conversationText}`;
-    
-    // Use Groq for title generation if available
-    const model = models.find(m => m.name === 'Groq');
-    if (model && model.apiKey) {
-      try {
-        const response = await axios.post(model.url, {
-          model: 'llama-3.1-8b-instant',
-          messages: [{ role: 'user', content: prompt }],
-          max_tokens: 50
-        }, {
-          headers: model.headers(model.apiKey),
-          timeout: 5000
-        });
-        const title = model.extractResponse(response.data).trim().replace(/^["']|["']$/g, '');
-        return res.json({ title });
-      } catch (error) {
-        console.error('Error generating title:', error.message);
-      }
-    }
-    
-    // Fallback to simple title
-    const firstMessage = messages[0].text.slice(0, 30) + (messages[0].text.length > 30 ? '...' : '');
-    res.json({ title: firstMessage });
+    const { error, count } = await supabase
+      .from('conversations')
+      .delete({ count: 'exact' })
+      .eq('user_id', req.user.userId);
+
+    if (error) throw error;
+
+    return res.json({ success: true, message: `Deleted ${count || 0} conversations` });
   } catch (error) {
-    console.error('Generate title error:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Delete conversations error:', error);
+    return res.status(500).json({ error: 'Server error' });
   }
 });
 
