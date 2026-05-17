@@ -10,6 +10,7 @@
     "vercel:prod": "vercel --prod"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.57.0",
     "axios": "^1.6.0",
     "bcryptjs": "^2.4.3",
     "dotenv": "^16.3.1",
