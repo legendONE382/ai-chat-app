@@ -237,3 +237,4 @@ After deployment, add environment variables:
    - Set up usage alerts
 
 Your AI Chat App is now deployed and accessible from anywhere, including mobile devices!
+but most truly i say to its failing at my end 
